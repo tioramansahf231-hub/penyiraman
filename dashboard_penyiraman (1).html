@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Penyiraman Otomatis</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; padding: 24px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; color: #fff; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+  .badge-live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 99px; background: rgba(29,158,117,0.15); color: #1D9E75; border: 1px solid rgba(29,158,117,0.3); margin-left: 12px; vertical-align: middle; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #1D9E75; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 10px; }
+  .refresh-btn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: #ccc; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+  .refresh-btn:hover { background: rgba(255,255,255,0.13); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .card { background: #1a1d27; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; }
+  .card-label { font-size: 12px; color: #666; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card-val { font-size: 26px; font-weight: 600; color: #fff; }
+  .card-unit { font-size: 14px; color: #666; }
+  .val-on { color: #1D9E75; }
+  .val-off { color: #555; }
+  .val-warn { color: #EF9F27; }
+
+  .chart-box { background: #1a1d27; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .chart-title { font-size: 14px; font-weight: 500; color: #ccc; margin-bottom: 16px; }
+  .chart-wrap { position: relative; width: 100%; height: 240px; }
+  .chart-wrap-sm { position: relative; width: 100%; height: 180px; }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 600px) { .row2 { grid-template-columns: 1fr; } }
+
+  .legend { display: flex; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+  .leg { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #888; }
+  .leg-sq { width: 10px; height: 10px; border-radius: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { color: #555; font-weight: 500; text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  td { color: #ccc; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  tr:last-child td { border-bottom: none; }
+
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 500; }
+  .p-on { background: rgba(29,158,117,0.15); color: #1D9E75; }
+  .p-off { background: rgba(100,100,100,0.15); color: #666; }
+  .p-warn { background: rgba(239,159,39,0.15); color: #EF9F27; }
+
+  .error { background: rgba(226,75,74,0.1); border: 1px solid rgba(226,75,74,0.3); color: #E24B4A; border-radius: 8px; padding: 12px 16px; font-size: 13px; margin-bottom: 20px; display: none; }
+  .loading { text-align: center; color: #555; padding: 40px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="top-row">
+  <div>
+    <h1>Monitor Penyiraman <span class="badge-live"><span class="dot"></span>Live</span></h1>
+    <div class="subtitle" id="last-update">Memuat data...</div>
+  </div>
+  <button class="refresh-btn" onclick="loadData()">&#x21bb; Refresh</button>
+</div>
+
+<div class="error" id="error-box"></div>
+<div class="loading" id="loading-box">Mengambil data dari Supabase...</div>
+
+<div id="main" style="display:none;">
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Kelembaban</div>
+      <div class="card-val" id="c-kel">--<span class="card-unit">%</span></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Pompa</div>
+      <div class="card-val" id="c-pompa">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Hujan</div>
+      <div class="card-val" id="c-hujan">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Cahaya</div>
+      <div class="card-val" id="c-cahaya">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Paranet</div>
+      <div class="card-val" id="c-paranet">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Jadwal</div>
+      <div class="card-val" id="c-jadwal">--</div>
+    </div>
+  </div>
+
+  <div class="chart-box">
+    <div class="chart-title">Kelembaban Tanah — 50 data terakhir</div>
+    <div class="chart-wrap">
+      <canvas id="chart-kel"></canvas>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="chart-box">
+      <div class="chart-title">Status Pompa</div>
+      <div class="legend">
+        <span class="leg"><span class="leg-sq" style="background:#1D9E75"></span>ON</span>
+        <span class="leg"><span class="leg-sq" style="background:#333"></span>OFF</span>
+      </div>
+      <div class="chart-wrap-sm"><canvas id="chart-pompa"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">Status Hujan</div>
+      <div class="legend">
+        <span class="leg"><span class="leg-sq" style="background:#378ADD"></span>Hujan</span>
+        <span class="leg"><span class="leg-sq" style="background:#333"></span>Tidak</span>
+      </div>
+      <div class="chart-wrap-sm"><canvas id="chart-hujan"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-box">
+    <div class="chart-title">Log Data Terbaru (15 terakhir)</div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Kelembaban</th>
+            <th>Pompa</th>
+            <th>Hujan</th>
+            <th>Cahaya</th>
+            <th>Paranet</th>
+            <th>Jadwal</th>
+          </tr>
+        </thead>
+        <tbody id="tbl"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const URL = 'https://fvzcnudphculpcfbkrir.supabase.co/rest/v1/data_log';
+const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2emNudWRwaGN1bHBjZmJrcmlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MzgzNzMsImV4cCI6MjA5NDMxNDM3M30.-182f6NqxiDtOfx8ge62wi4ErIwLIRSfJo2Hc8Yw3kA';
+
+let cKel, cPompa, cHujan;
+
+function fmt(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}) + ' ' +
+         d.toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit'});
+}
+
+async function loadData() {
+  document.getElementById('loading-box').style.display = 'block';
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('error-box').style.display = 'none';
+  try {
+    const r = await fetch(URL + '?order=waktu.desc&limit=50', {
+      headers: { apikey: KEY, Authorization: 'Bearer ' + KEY }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const raw = await r.json();
+    if (!raw.length) throw new Error('Belum ada data');
+    const data = raw.reverse();
+    const L = data[data.length - 1];
+
+    document.getElementById('last-update').textContent = 'Update: ' + fmt(L.waktu);
+
+    // Kartu
+    document.getElementById('c-kel').innerHTML = (L.kelembaban_tanah ?? '--') + '<span class="card-unit">%</span>';
+
+    const setCard = (id, val, onVal, onClass, offClass) => {
+      const el = document.getElementById(id);
+      const v = (val || '').toUpperCase();
+      el.textContent = val || '--';
+      el.className = 'card-val ' + (v === onVal.toUpperCase() ? onClass : offClass);
+    };
+    setCard('c-pompa', L.pompa, 'ON', 'val-on', 'val-off');
+    const hujanVal = L.Hujan || L.hujan || '--';
+    setCard('c-hujan', hujanVal, 'YA', 'val-warn', 'val-on');
+    setCard('c-cahaya', L.cahaya, 'TERANG', 'val-warn', 'val-off');
+    setCard('c-paranet', L.langkah_motorik, 'TERBUKA', 'val-on', 'val-off');
+    setCard('c-jadwal', L.jadwal, 'AKTIF', 'val-on', 'val-off');
+
+    // Data grafik
+    const labels = data.map(d => fmt(d.waktu));
+    const kelData = data.map(d => d.kelembaban_tanah ?? 0);
+    const pompaData = data.map(d => (d.pompa||'').toUpperCase() === 'ON' ? 1 : 0);
+    const hujanData = data.map(d => ((d.Hujan||d.hujan||'').toUpperCase() === 'YA') ? 1 : 0);
+
+    // Grafik kelembaban
+    if (cKel) cKel.destroy();
+    cKel = new Chart(document.getElementById('chart-kel'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Kelembaban (%)',
+          data: kelData,
+          borderColor: '#1D9E75',
+          backgroundColor: 'rgba(29,158,117,0.1)',
+          borderWidth: 2,
+          pointRadius: 3,
+          fill: true,
+          tension: 0.35
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 8, color: '#555', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          y: { min: 0, max: 100, ticks: { color: '#555', font: { size: 11 }, callback: v => v + '%' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+        }
+      }
+    });
+
+    // Grafik pompa
+    if (cPompa) cPompa.destroy();
+    cPompa = new Chart(document.getElementById('chart-pompa'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: pompaData,
+          backgroundColor: pompaData.map(v => v ? '#1D9E75' : '#2a2a2a'),
+          borderRadius: 3, borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6, color: '#555', font: { size: 10 } }, grid: { display: false } },
+          y: { min: 0, max: 1, ticks: { stepSize: 1, color: '#555', font: { size: 11 }, callback: v => v ? 'ON' : 'OFF' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+        }
+      }
+    });
+
+    // Grafik hujan
+    if (cHujan) cHujan.destroy();
+    cHujan = new Chart(document.getElementById('chart-hujan'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: hujanData,
+          backgroundColor: hujanData.map(v => v ? '#378ADD' : '#2a2a2a'),
+          borderRadius: 3, borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6, color: '#555', font: { size: 10 } }, grid: { display: false } },
+          y: { min: 0, max: 1, ticks: { stepSize: 1, color: '#555', font: { size: 11 }, callback: v => v ? 'Ya' : 'Tidak' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+        }
+      }
+    });
+
+    // Tabel
+    const tbody = document.getElementById('tbl');
+    tbody.innerHTML = '';
+    data.slice().reverse().slice(0, 15).forEach(row => {
+      const p = (v, on, cls) => `<span class="pill ${(v||'').toUpperCase()===on.toUpperCase()?cls:'p-off'}">${v||'-'}</span>`;
+      const hv = row.Hujan || row.hujan || '-';
+      tbody.innerHTML += `<tr>
+        <td style="white-space:nowrap;font-size:12px;">${fmt(row.waktu)}</td>
+        <td>${row.kelembaban_tanah ?? '-'}%</td>
+        <td>${p(row.pompa,'ON','p-on')}</td>
+        <td>${p(hv,'YA','p-warn')}</td>
+        <td>${p(row.cahaya,'TERANG','p-warn')}</td>
+        <td>${p(row.langkah_motorik,'TERBUKA','p-on')}</td>
+        <td>${p(row.jadwal,'AKTIF','p-on')}</td>
+      </tr>`;
+    });
+
+    document.getElementById('loading-box').style.display = 'none';
+    document.getElementById('main').style.display = 'block';
+  } catch(e) {
+    document.getElementById('loading-box').style.display = 'none';
+    const eb = document.getElementById('error-box');
+    eb.textContent = 'Gagal: ' + e.message;
+    eb.style.display = 'block';
+  }
+}
+
+loadData();
+setInterval(loadData, 60000);
+</script>
+</body>
+</html>
